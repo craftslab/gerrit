@@ -15,10 +15,12 @@ import {changeModelToken} from '../../../models/change/change-model';
 import {resolve} from '../../../models/dependency';
 import {sharedStyles} from '../../../styles/shared-styles';
 import {formStyles} from '../../../styles/form-styles';
+import {getAppContext} from '../../../services/app-context';
 import {ChangeInfo} from '../../../types/common';
 import {ParsedChangeInfo} from '../../../types/types';
 import {fire} from '../../../utils/event-util';
 import {changeIsMerged} from '../../../utils/change-util';
+import {materialStyles} from '../../../styles/gr-material-styles';
 
 export interface AutosubmitCheckedChangedEventDetail {
   checked: boolean;
@@ -55,24 +57,29 @@ export class GrAutosubmitCheckbox extends LitElement {
 
   readonly getChangeModel = resolve(this, changeModelToken);
 
+  private readonly reporting = getAppContext().reportingService;
+
   static override get styles() {
     return [
+      materialStyles,
       formStyles,
       sharedStyles,
       css`
-        .autosubmit-label {
-          display: flex;
-          align-items: center;
-        }
-        .autosubmit-text {
-          padding-left: var(--spacing-m);
-        }
+        .autosubmit,
         .autosubmit-info {
           display: flex;
           align-items: center;
+          border-radius: var(--border-radius);
+          color: var(--info-foreground);
         }
-        .autosubmit-info label {
-          background: var(--info-background);
+        .autosubmit-label {
+          display: flex;
+          align-items: center;
+          background-color: var(--info-background);
+        }
+        #autosubmit,
+        .autosubmit-text {
+          padding-left: var(--spacing-m);
         }
         .autosubmit-info gr-icon {
           color: var(--info-foreground);
@@ -83,7 +90,8 @@ export class GrAutosubmitCheckbox extends LitElement {
           --md-checkbox-icon-size: 15px;
         }
         :host {
-          padding: var(--spacing-m) 0;
+          display: block;
+          margin: var(--spacing-m) 0;
         }
       `,
     ];
@@ -107,12 +115,16 @@ export class GrAutosubmitCheckbox extends LitElement {
           this.getChangeModel().change$,
         ]),
       ([isAutosubmitEnabled, isFlowsEnabled, _, isOwner, change]) => {
+        const oldEnabled = this.isAutosubmitEnabled;
         this.isAutosubmitEnabled =
           isAutosubmitEnabled &&
           isFlowsEnabled &&
           !this.getFlowsModel().hasAutosubmitFlowAlready() &&
           isOwner &&
           !changeIsMerged(change);
+        if (this.isAutosubmitEnabled && !oldEnabled) {
+          this.reporting.reportInteraction('autosubmit-checkbox-shown');
+        }
         this.showAutosubmitInfoMessage =
           isAutosubmitEnabled &&
           isFlowsEnabled &&
@@ -136,10 +148,8 @@ export class GrAutosubmitCheckbox extends LitElement {
     if (this.showAutosubmitInfoMessage) {
       return html`
         <div class="autosubmit-info">
-          <label>
-            <gr-icon icon="info"></gr-icon>
-            <span>${autosubmitMessage}</span>
-          </label>
+          <gr-icon icon="info"></gr-icon>
+          <span>${autosubmitMessage}</span>
         </div>
       `;
     }
@@ -170,6 +180,8 @@ export class GrAutosubmitCheckbox extends LitElement {
       target="_blank"
       rel="noopener noreferrer"
       tabindex="-1"
+      @click=${() =>
+        this.reporting.reportInteraction('flows-documentation-link-clicked')}
     >
       <md-icon-button touch-target="none" type="button">
         <gr-icon icon="help" title="read documentation"></gr-icon>
@@ -180,6 +192,9 @@ export class GrAutosubmitCheckbox extends LitElement {
   private handleAutosubmitChanged(e: Event) {
     if (!(e.target instanceof MdCheckbox)) return;
     this.autosubmitChecked = e.target.checked;
+    this.reporting.reportInteraction('autosubmit-checkbox-clicked', {
+      checked: this.autosubmitChecked,
+    });
     fire(this, 'autosubmit-checked-changed', {checked: this.autosubmitChecked});
   }
 

@@ -13,7 +13,44 @@ export declare interface AiCodeReviewPluginApi {
   register(provider: AiCodeReviewProvider): void;
 }
 
+/**
+ * Enum for AI chat Action types.
+ */
+export enum ActionEnum {
+  ACTION_UNSPECIFIED = 0,
+  ACTION_FREE_CHAT = 1,
+  ACTION_EXPLAIN_CODE = 2,
+  ACTION_IMPROVE_CODE = 3,
+  // 4 and 5 are deprecated.
+
+  // ACTION_CUSTOM indicates that the user selected a custom action. In which
+  // case the action is determined by a `custom_action_id` that is set in the
+  // request.
+  ACTION_CUSTOM = 6,
+  ACTION_EXPLAIN_BUG = 7,
+  ACTION_SUMMARIZE = 8,
+  ACTION_ISSUE_FINDING = 9,
+  ACTION_HELP_REVIEW = 10,
+  ACTION_CL_GOAL = 11,
+}
+
+/**
+ * The metadata source for a custom action.
+ */
+export declare interface MetadataSource {
+  cl_number?: number;
+}
+
+/**
+ * The source of a custom action.
+ */
+export declare interface CustomActionSource {
+  custom_action_id: string;
+  metadata_source?: MetadataSource;
+}
+
 export declare interface Action {
+  action_type?: ActionEnum;
   id: string;
   display_text: string;
   hover_text?: string;
@@ -32,6 +69,7 @@ export declare interface Action {
   group_id?: string;
   group_display_text?: string;
   external_contexts?: ContextItem[];
+  custom_action_source?: CustomActionSource;
 }
 
 export declare interface ChatRequest {

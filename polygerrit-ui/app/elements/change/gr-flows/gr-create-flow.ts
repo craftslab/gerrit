@@ -18,6 +18,7 @@ import {getAppContext} from '../../../services/app-context';
 import {NumericChangeId, ServerInfo} from '../../../types/common';
 import '../../shared/gr-button/gr-button';
 import '../../shared/gr-dialog/gr-dialog';
+import '../../shared/gr-icon/gr-icon';
 import '../../core/gr-search-autocomplete/gr-search-autocomplete';
 import '@material/web/select/outlined-select.js';
 import '@material/web/select/select-option.js';
@@ -55,6 +56,7 @@ import {LabelSuggestionsProvider} from '../../../services/label-suggestions-prov
 import {queryAndAssert, unique} from '../../../utils/common-util';
 import {fireAlert} from '../../../utils/event-util';
 import {MdOutlinedSelect} from '@material/web/select/outlined-select.js';
+import {Interaction} from '../../../constants/reporting';
 
 const MAX_AUTOCOMPLETE_RESULTS = 10;
 
@@ -114,6 +116,8 @@ export class GrCreateFlow extends LitElement {
   @state() documentationLink?: string;
 
   private readonly restApiService = getAppContext().restApiService;
+
+  private readonly reportingService = getAppContext().reportingService;
 
   private readonly getConfigModel = resolve(this, configModelToken);
 
@@ -354,12 +358,11 @@ export class GrCreateFlow extends LitElement {
           color: var(--deemphasized-text-color);
           min-width: 1.5em;
         }
+        .preview-label {
+          margin-top: var(--spacing-l);
+        }
         .flow-rule {
           flex: 1;
-          border: 1px solid var(--border-color);
-          padding: var(--spacing-m) var(--spacing-l);
-          border-radius: var(--border-radius);
-          background-color: var(--background-color-primary);
         }
         .full-width-text-field {
           width: 100%;
@@ -369,8 +372,23 @@ export class GrCreateFlow extends LitElement {
         md-icon-button {
           --md-icon-button-icon-size: 20px;
         }
+        .info {
+          padding: var(--spacing-m);
+          width: fit-content;
+        }
+        .info-text {
+          font-weight: 300;
+          padding-left: var(--spacing-s);
+        }
+        .info-title {
+          font-weight: var(--font-weight-bold);
+        }
       `,
     ];
+  }
+
+  protected override firstUpdated() {
+    this.reportingService.reportInteraction(Interaction.FLOWS_TAB_RENDERED);
   }
 
   override willUpdate(changedProperties: PropertyValues) {
@@ -397,6 +415,7 @@ export class GrCreateFlow extends LitElement {
     return when(
       this.stages.length > 0,
       () => html`
+        <div class="stage-label preview-label">Preview</div>
         <div class="stages-list">
           ${this.stages.map(
             (stage, index) => html`
@@ -452,10 +471,21 @@ export class GrCreateFlow extends LitElement {
 
   override render() {
     return html`
+      <div class="info">
+        <span class="info-title"> Flows: </span>
+        <span class="info-text">
+          Automate your workflow such as adding reviewers, starting reviews,
+          submitting changes and more
+        </span>
+      </div>
+
       <div class="create-flow-header">
         <gr-button
           aria-label="Create Flow"
           @click=${() => {
+            this.reportingService.reportInteraction(
+              Interaction.CREATE_FLOW_DIALOG_OPENED
+            );
             this.createModal?.showModal();
           }}
         >
@@ -491,6 +521,10 @@ export class GrCreateFlow extends LitElement {
       target="_blank"
       rel="noopener noreferrer"
       tabindex="-1"
+      @click=${() =>
+        this.reportingService.reportInteraction(
+          'flows-documentation-link-clicked'
+        )}
     >
       <md-icon-button touch-target="none" type="button">
         <gr-icon icon="help" title="read documentation"></gr-icon>
@@ -535,7 +569,6 @@ export class GrCreateFlow extends LitElement {
             ${when(
               this.guidedBuilderExpanded,
               () => html`
-                <div>${this.renderStages()}</div>
                 <div class="add-stage-box">
                   <div class="stage-label">Condition: IF</div>
                   <div class="stage-row">
@@ -600,6 +633,7 @@ export class GrCreateFlow extends LitElement {
                     >
                   </div>
                 </div>
+                ${this.renderStages()}
               `
             )}
             <div
@@ -827,6 +861,7 @@ export class GrCreateFlow extends LitElement {
       }),
     };
     await this.getFlowsModel().createFlow(flowInput);
+    this.reportingService.reportInteraction(Interaction.FLOW_CREATED);
     this.stages = [];
     this.currentCondition = '';
     this.currentAction = '';

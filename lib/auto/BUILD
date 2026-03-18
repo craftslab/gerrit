@@ -3,9 +3,10 @@ load("@rules_java//java:defs.bzl", "java_library", "java_plugin")
 java_plugin(
     name = "auto-annotation-plugin",
     processor_class = "com.google.auto.value.processor.AutoAnnotationProcessor",
+    visibility = ["//tools/eclipse:__pkg__"],
     deps = [
-        "@auto-value-annotations//jar",
-        "@auto-value//jar",
+        "@external_deps//:com_google_auto_value_auto_value",
+        "@external_deps//:com_google_auto_value_auto_value_annotations",
     ],
 )
 
@@ -13,64 +14,68 @@ java_plugin(
     name = "auto-factory-plugin",
     generates_api = 1,
     processor_class = "com.google.auto.factory.processor.AutoFactoryProcessor",
-    visibility = ["//visibility:private"],
+    visibility = ["//tools/eclipse:__pkg__"],
     deps = [
-        "@auto-common//jar",
-        "@auto-factory//jar",
-        "@auto-service-annotations//jar",
-        "@auto-value-annotations//jar",
-        "@auto-value//jar",
-        "@guava//jar",
-        "@javapoet//jar",
-        "@javax_inject//jar",
+        "@external_deps//:com_google_auto_auto_common",
+        "@external_deps//:com_google_auto_factory_auto_factory",
+        "@external_deps//:com_google_auto_service_auto_service_annotations",
+        "@external_deps//:com_google_auto_value_auto_value",
+        "@external_deps//:com_google_auto_value_auto_value_annotations",
+        "@external_deps//:com_google_guava_guava",
+        "@external_deps//:com_squareup_javapoet",
+        "@external_deps//:javax_inject_javax_inject",
     ],
 )
 
 java_plugin(
     name = "auto-builder-plugin",
     processor_class = "com.google.auto.value.processor.AutoBuilderProcessor",
+    visibility = ["//tools/eclipse:__pkg__"],
     deps = [
-        "@auto-common//jar",
-        "@auto-factory//jar",
-        "@auto-service-annotations//jar",
-        "@auto-value-annotations//jar",
-        "@auto-value//jar",
-        "@guava//jar",
-        "@javapoet//jar",
-        "@javax_inject//jar",
+        "@external_deps//:com_google_auto_auto_common",
+        "@external_deps//:com_google_auto_factory_auto_factory",
+        "@external_deps//:com_google_auto_service_auto_service_annotations",
+        "@external_deps//:com_google_auto_value_auto_value",
+        "@external_deps//:com_google_auto_value_auto_value_annotations",
+        "@external_deps//:com_google_guava_guava",
+        "@external_deps//:com_squareup_javapoet",
+        "@external_deps//:javax_inject_javax_inject",
     ],
 )
 
 java_plugin(
     name = "auto-value-plugin",
     processor_class = "com.google.auto.value.processor.AutoValueProcessor",
+    visibility = ["//tools/eclipse:__pkg__"],
     deps = [
-        "@auto-value-annotations//jar",
-        "@auto-value//jar",
+        "@external_deps//:com_google_auto_value_auto_value",
+        "@external_deps//:com_google_auto_value_auto_value_annotations",
     ],
 )
 
 java_plugin(
     name = "auto-oneof-plugin",
     processor_class = "com.google.auto.value.processor.AutoOneOfProcessor",
+    visibility = ["//tools/eclipse:__pkg__"],
     deps = [
-        "@auto-value-annotations//jar",
-        "@auto-value//jar",
+        "@external_deps//:com_google_auto_value_auto_value",
+        "@external_deps//:com_google_auto_value_auto_value_annotations",
     ],
 )
 
 java_plugin(
     name = "auto-value-gson-plugin",
     processor_class = "com.ryanharter.auto.value.gson.factory.AutoValueGsonAdapterFactoryProcessor",
+    visibility = ["//tools/eclipse:__pkg__"],
     deps = [
-        "@auto-value-annotations//jar",
-        "@auto-value-gson-extension//jar",
-        "@auto-value-gson-factory//jar",
-        "@auto-value-gson-runtime//jar",
-        "@auto-value//jar",
-        "@autotransient//jar",
-        "@gson//jar",
-        "@javapoet//jar",
+        "@external_deps//:com_google_auto_value_auto_value",
+        "@external_deps//:com_google_auto_value_auto_value_annotations",
+        "@external_deps//:com_google_code_gson_gson",
+        "@external_deps//:com_ryanharter_auto_value_auto_value_gson_extension",
+        "@external_deps//:com_ryanharter_auto_value_auto_value_gson_factory",
+        "@external_deps//:com_ryanharter_auto_value_auto_value_gson_runtime",
+        "@external_deps//:com_squareup_javapoet",
+        "@external_deps//:io_sweers_autotransient_autotransient",
     ],
 )
 
@@ -81,7 +86,7 @@ java_library(
         ":auto-factory-plugin",
     ],
     visibility = ["//visibility:public"],
-    exports = ["@auto-factory//jar"],
+    exports = ["@external_deps//:com_google_auto_factory_auto_factory"],
 )
 
 java_library(
@@ -94,7 +99,7 @@ java_library(
         ":auto-oneof-plugin",
     ],
     visibility = ["//visibility:public"],
-    exports = ["@auto-value//jar"],
+    exports = ["@external_deps//:com_google_auto_value_auto_value"],
 )
 
 java_library(
@@ -107,7 +112,7 @@ java_library(
         ":auto-oneof-plugin",
     ],
     visibility = ["//visibility:public"],
-    exports = ["@auto-value-annotations//jar"],
+    exports = ["@external_deps//:com_google_auto_value_auto_value_annotations"],
 )
 
 java_library(
@@ -118,6 +123,6 @@ java_library(
     ],
     visibility = ["//visibility:public"],
     exports = [
-        "@auto-value-gson-runtime//jar",
+        "@external_deps//:com_ryanharter_auto_value_auto_value_gson_runtime",
     ],
 )

@@ -22,7 +22,7 @@ import re
 import sys
 
 MAIN = '//tools/eclipse:classpath'
-AUTO = '//lib/auto:auto-value'
+AUTO_COLLECT = '//tools/eclipse:autovalue_classpath_collect'
 
 def JRE(java_vers = '21'):
     return '/'.join([
@@ -33,7 +33,6 @@ def JRE(java_vers = '21'):
 
 # Map of targets to corresponding classpath collector rules
 cp_targets = {
-    AUTO: '//tools/eclipse:autovalue_classpath_collect',
     MAIN: '//tools/eclipse:main_classpath_collect',
 }
 
@@ -87,13 +86,10 @@ bazel_exe = find_bazel()
 
 
 def _build_bazel_cmd(*args):
-    build = False
     cmd = [bazel_exe]
     if batch_option:
         cmd.append('--batch')
     for arg in args:
-        if arg == "build":
-            build = True
         cmd.append(arg)
     if custom_java:
         cmd.append('--config=java%s' % custom_java)
@@ -105,6 +101,10 @@ def retrieve_ext_location():
     return subprocess.check_output(_build_bazel_cmd('info', 'output_base')).strip()
 
 
+def retrieve_exec_root():
+    return subprocess.check_output(_build_bazel_cmd('info', 'execution_root')).strip()
+
+
 def gen_bazel_path(ext_location):
     bazel = subprocess.check_output(['which', bazel_exe]).strip().decode('UTF-8')
     with open(os.path.join(ROOT, ".bazel_path"), 'w') as fd:
@@ -114,15 +114,39 @@ def gen_bazel_path(ext_location):
 
 
 def _query_classpath(target):
-    deps = []
     t = cp_targets[target]
     try:
         subprocess.check_call(_build_bazel_cmd('build', t))
     except subprocess.CalledProcessError:
         exit(1)
-    name = 'bazel-bin/tools/eclipse/' + t.split(':')[1] + '.runtime_classpath'
-    deps = [line.rstrip('\n') for line in open(name)]
-    return deps
+
+    base = 'bazel-bin/tools/eclipse/' + t.split(':')[1]
+
+    runtime_name = base + '.runtime_classpath'
+    runtime = [line.rstrip('\n') for line in open(runtime_name)]
+
+    sources = []
+    sources_name = base + '.source_classpath'
+    if os.path.exists(sources_name):
+        sources = [line.rstrip('\n') for line in open(sources_name)]
+
+    return runtime, sources
+
+
+def _normalize_jar_basename(p):
+    b = os.path.basename(p)
+    for pref in ('processed_', 'header_'):
+        if b.startswith(pref):
+            b = b[len(pref):]
+    if b.endswith('-sources.jar'):
+        b = b[:-len('-sources.jar')] + '.jar'
+    return b
+
+
+def _resolve_repo_path(output_base, p):
+    if p.startswith("external"):
+        return os.path.join(output_base, p)
+    return p
 
 
 def gen_project(name='gerrit', root=ROOT):
@@ -165,7 +189,7 @@ def gen_plugin_classpath(root):
 </classpath>""" % {"testpath": testpath}, file=fd)
 
 
-def gen_classpath(ext):
+def gen_classpath(exec_root, output_base):
     def make_classpath():
         impl = xml.dom.minidom.getDOMImplementation()
         return impl.createDocument(None, 'classpath', None)
@@ -181,6 +205,9 @@ def gen_classpath(ext):
         classpathentry('src', 'modules/jgit/org.eclipse.jgit.junit/src')
         classpathentry('src', 'modules/jgit/org.eclipse.jgit.ssh.apache/src')
         classpathentry('src', 'modules/jgit/org.eclipse.jgit.ssh.apache/resources')
+
+    def import_prettify_sources():
+        classpathentry('src', 'modules/java-prettify/src')
 
     def classpathentry(kind, path, src=None, out=None, exported=None, excluding=None):
         e = doc.createElement('classpathentry')
@@ -227,13 +254,19 @@ def gen_classpath(ext):
     # Classpath entries are absolute for cross-cell support
     java_library = re.compile('bazel-out/.*?-fastbuild/bin/(.*)/[^/]+[.]jar$')
     proto_library = re.compile('bazel-out/.*?-fastbuild/bin/(.*)proto/(.*)_proto-speed[.]jar$')
-    srcs = re.compile('(.*/external/[^/]+)/jar/(.*)[.]jar')
-    for p in _query_classpath(MAIN):
+
+    runtime_cp, source_cp = _query_classpath(MAIN)
+
+    source_by_basename = {}
+    for p in source_cp:
+        source_by_basename[_normalize_jar_basename(p)] = p
+
+    for p in runtime_cp:
         if p.endswith('-src.jar'):
             continue
 
         m = java_library.match(p)
-        if m:
+        if m and "/external/" not in p:
             src.add(m.group(1))
             # Exceptions: both source and lib
             if p.endswith('libquery_parser.jar') or \
@@ -249,14 +282,14 @@ def gen_classpath(ext):
             if p.endswith(
                "external/bazel_tools/tools/jdk/TestRunner_deploy.jar"):
                 continue
-            if p.startswith("external"):
-                p = os.path.join(ext, p)
+            p = _resolve_repo_path(output_base, p)
             lib.add(p)
 
     classpathentry('src', 'java')
     classpathentry('src', 'javatests', out='eclipse-out/test')
     classpathentry('src', 'resources')
     import_jgit_sources()
+    import_prettify_sources()
     for s in sorted(src):
         out = None
 
@@ -290,14 +323,31 @@ def gen_classpath(ext):
 
     for libs in [lib]:
         for j in sorted(libs):
+            j = _prefer_unprocessed_jar("", j)
+
+            # Some rules_jvm_external entries can be listed as processed_* jars
+            # that are not materialized locally. Eclipse treats them as missing
+            # required libraries. Skip such entries rather than generating a
+            # broken .classpath.
+            if (os.path.basename(j).startswith("processed_") or
+                os.path.basename(j).startswith("header_")) and not os.path.exists(j):
+                continue
+
+            # java-prettify is vendored in-tree under modules/java-prettify.
+            # Eclipse compiles it directly from sources, so ignore the external
+            # libjava-prettify.jar entry produced by Bazel.
+            if os.path.basename(j) == "libjava-prettify.jar" and "/external/" in j:
+                continue
+
             s = None
-            m = srcs.match(j)
-            if m:
-                prefix = m.group(1)
-                suffix = m.group(2)
-                p = os.path.join(prefix, "jar", "%s-src.jar" % suffix)
-                if os.path.exists(p):
-                    s = p
+
+            # Attach sources using the classpath_collector output from rules_jvm_external.
+            # This replaces the previous heuristic-based source lookup.
+            key = _normalize_jar_basename(j)
+            if key in source_by_basename:
+                sp = _resolve_repo_path(output_base, source_by_basename[key])
+                s = sp
+
             if args.plugins:
                 classpathentry('lib', j, s, exported=True)
             else:
@@ -329,13 +379,44 @@ def gen_classpath(ext):
                       file=sys.stderr)
 
 
-def gen_factorypath(ext):
+def _prefer_unprocessed_jar(ext, jar):
+    b = os.path.basename(jar)
+    if b.startswith('processed_'):
+        alt = os.path.join(os.path.dirname(jar), b[len('processed_'):])
+    elif b.startswith('header_'):
+        alt = os.path.join(os.path.dirname(jar), b[len('header_'):])
+    else:
+        return jar
+    if os.path.exists(os.path.join(ext, alt)):
+        return alt
+    return jar
+
+
+def gen_factorypath(exec_root, output_base):
     doc = xml.dom.minidom.getDOMImplementation().createDocument(
         None, 'factorypath', None)
-    for jar in _query_classpath(AUTO):
+
+    try:
+        subprocess.check_call(_build_bazel_cmd('build', AUTO_COLLECT))
+    except subprocess.CalledProcessError:
+        exit(1)
+
+    base = 'bazel-bin/tools/eclipse/' + AUTO_COLLECT.split(':')[1]
+    processors_name = base + '.processor_classpath'
+
+    processors = []
+    if os.path.exists(processors_name):
+        processors = [line.rstrip('\n') for line in open(processors_name)]
+
+    for jar in processors:
+        jar = _prefer_unprocessed_jar(exec_root, jar)
+        jar = _resolve_repo_path(output_base, jar)
         e = doc.createElement('factorypathentry')
         e.setAttribute('kind', 'EXTJAR')
-        e.setAttribute('id', os.path.join(ext, jar))
+        if os.path.isabs(jar):
+            e.setAttribute('id', jar)
+        else:
+            e.setAttribute('id', os.path.join(exec_root, jar))
         e.setAttribute('enabled', 'true')
         e.setAttribute('runInBatchMode', 'false')
         doc.documentElement.appendChild(e)
@@ -346,11 +427,12 @@ def gen_factorypath(ext):
 
 
 try:
-    ext_location = retrieve_ext_location().decode("utf-8")
+    output_base = retrieve_ext_location().decode("utf-8")
+    exec_root = retrieve_exec_root().decode("utf-8")
     gen_project(args.project_name)
-    gen_classpath(ext_location)
-    gen_factorypath(ext_location)
-    gen_bazel_path(ext_location)
+    gen_classpath(exec_root, output_base)
+    gen_factorypath(exec_root, output_base)
+    gen_bazel_path(output_base)
 
     try:
         subprocess.check_call(_build_bazel_cmd('build', MAIN))
@@ -359,3 +441,4 @@ try:
 except KeyboardInterrupt:
     print('Interrupted by user', file=sys.stderr)
     exit(1)
+

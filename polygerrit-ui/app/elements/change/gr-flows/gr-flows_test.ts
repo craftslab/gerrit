@@ -33,18 +33,16 @@ import {
   createRevision,
 } from '../../../test/test-data-generators';
 
-function setChangeWithUploader(
-  changeModel: ChangeModel,
-  uploaderId: AccountId
-) {
+function setChangeWithOwner(changeModel: ChangeModel, ownerId: AccountId) {
   changeModel.updateState({
     change: {
       ...createParsedChange(),
       _number: 123 as NumericChangeId,
+      owner: createAccountDetailWithId(ownerId),
       revisions: {
         rev1: {
           ...createRevision(1),
-          uploader: createAccountDetailWithId(uploaderId),
+          uploader: createAccountDetailWithId(ownerId),
         },
       },
       current_revision: 'rev1' as CommitId,
@@ -71,7 +69,7 @@ suite('gr-flows tests', () => {
 
     element = await fixture<GrFlows>(html`<gr-flows></gr-flows>`);
     await element.updateComplete;
-    setChangeWithUploader(changeModel, 123 as AccountId);
+    setChangeWithOwner(changeModel, 123 as AccountId);
     userModel.setState({
       account: createAccountDetailWithId(123 as AccountId),
       accountLoaded: true,
@@ -98,6 +96,14 @@ suite('gr-flows tests', () => {
     const flows: FlowInfo[] = [
       createFlow({
         last_evaluated: '2025-01-01T11:00:00.000Z' as Timestamp,
+        stages: [
+          {
+            expression: {
+              condition: 'label:Code-Review=+1',
+            },
+            state: FlowStageState.PENDING,
+          },
+        ],
       }),
       createFlow({
         uuid: 'flow2',
@@ -228,8 +234,79 @@ suite('gr-flows tests', () => {
     );
   });
 
+  test('disables delete button for successful flows', async () => {
+    const flows: FlowInfo[] = [
+      createFlow({
+        stages: [
+          {
+            expression: {
+              condition: 'label:Verified=+1',
+              action: {name: 'submit'},
+            },
+            state: FlowStageState.DONE,
+          },
+        ],
+      }),
+    ];
+    flowsModel.setState({
+      flows,
+      loading: false,
+      isEnabled: true,
+      providers: [],
+      autosubmitProviders: [],
+    });
+    await element.updateComplete;
+
+    const deleteButton = queryAndAssert<GrButton>(
+      element,
+      'gr-button[title="Delete flow"]'
+    );
+    assert.isTrue(deleteButton.disabled);
+  });
+
+  test('does not disable delete button for pending flows', async () => {
+    const flows: FlowInfo[] = [
+      createFlow({
+        stages: [
+          {
+            expression: {
+              condition: 'label:Verified=+1',
+              action: {name: 'submit'},
+            },
+            state: FlowStageState.PENDING,
+          },
+        ],
+      }),
+    ];
+    flowsModel.setState({
+      flows,
+      loading: false,
+      isEnabled: true,
+      providers: [],
+      autosubmitProviders: [],
+    });
+    await element.updateComplete;
+
+    const deleteButton = queryAndAssert<GrButton>(
+      element,
+      '.flow .flow-actions gr-button[title="Delete flow"]'
+    );
+    assert.isFalse(deleteButton.disabled);
+  });
+
   test('deletes a flow after confirmation', async () => {
-    const flows: FlowInfo[] = [createFlow()];
+    const flows: FlowInfo[] = [
+      createFlow({
+        stages: [
+          {
+            expression: {
+              condition: 'label:Code-Review=+1',
+            },
+            state: FlowStageState.PENDING,
+          },
+        ],
+      }),
+    ];
     const deleteFlowStub = sinon.stub(flowsModel, 'deleteFlow');
     flowsModel.setState({
       flows,
@@ -240,7 +317,10 @@ suite('gr-flows tests', () => {
     });
     await element.updateComplete;
 
-    const deleteButton = queryAndAssert<GrButton>(element, '.flow gr-button');
+    const deleteButton = queryAndAssert<GrButton>(
+      element,
+      'gr-button[title="Delete flow"]'
+    );
     deleteButton.click();
     await element.updateComplete;
 
@@ -259,7 +339,18 @@ suite('gr-flows tests', () => {
   });
 
   test('cancel deleting a flow', async () => {
-    const flows: FlowInfo[] = [createFlow()];
+    const flows: FlowInfo[] = [
+      createFlow({
+        stages: [
+          {
+            expression: {
+              condition: 'label:Code-Review=+1',
+            },
+            state: FlowStageState.PENDING,
+          },
+        ],
+      }),
+    ];
     const deleteFlowStub = sinon.stub(flowsModel, 'deleteFlow');
     flowsModel.setState({
       flows,
@@ -270,7 +361,10 @@ suite('gr-flows tests', () => {
     });
     await element.updateComplete;
 
-    const deleteButton = queryAndAssert<GrButton>(element, '.flow gr-button');
+    const deleteButton = queryAndAssert<GrButton>(
+      element,
+      'gr-button[title="Delete flow"]'
+    );
     deleteButton.click();
     await element.updateComplete;
 
@@ -290,7 +384,16 @@ suite('gr-flows tests', () => {
   });
 
   test('refreshes flows on button click', async () => {
-    const flow = createFlow();
+    const flow = createFlow({
+      stages: [
+        {
+          expression: {
+            condition: 'label:Code-Review=+1',
+          },
+          state: FlowStageState.PENDING,
+        },
+      ],
+    });
     flowsModel.setState({
       flows: [flow],
       loading: false,
@@ -325,10 +428,10 @@ suite('gr-flows tests', () => {
       await element.updateComplete;
     });
 
-    test('shows gr-create-flow when current user is uploader', async () => {
-      const uploaderId = 123 as AccountId;
+    test('shows gr-create-flow when current user is owner', async () => {
+      const ownerId = 123 as AccountId;
       const currentUserId = 123 as AccountId;
-      setChangeWithUploader(changeModel, uploaderId);
+      setChangeWithOwner(changeModel, ownerId);
       userModel.setState({
         account: createAccountDetailWithId(currentUserId),
         accountLoaded: true,
@@ -339,10 +442,10 @@ suite('gr-flows tests', () => {
       assert.isNotNull(createFlow);
     });
 
-    test('hides gr-create-flow when current user is not uploader', async () => {
-      const uploaderId = 456 as AccountId;
+    test('hides gr-create-flow when current user is not owner', async () => {
+      const ownerId = 456 as AccountId;
       const currentUserId = 123 as AccountId;
-      setChangeWithUploader(changeModel, uploaderId);
+      setChangeWithOwner(changeModel, ownerId);
       userModel.setState({
         account: createAccountDetailWithId(currentUserId),
         accountLoaded: true,
